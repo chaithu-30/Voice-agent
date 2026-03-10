@@ -74,6 +74,8 @@ dependencies {
     // Core Android
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.fragment.ktx)
+implementation("androidx.appcompat:appcompat:1.6.1")
+implementation("com.google.android.material:material:1.11.0")
 }
 
 afterEvaluate {

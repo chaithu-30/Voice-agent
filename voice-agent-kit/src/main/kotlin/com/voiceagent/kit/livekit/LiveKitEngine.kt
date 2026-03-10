@@ -3,11 +3,11 @@ package com.voiceagent.kit.livekit
 import android.content.Context
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
 import com.voiceagent.kit.config.VoiceAgentConfig
 import com.voiceagent.kit.utils.VoiceAgentLogger
 import io.livekit.android.LiveKit
 import io.livekit.android.LiveKitOverrides
-import io.livekit.android.RoomOptions
 import io.livekit.android.events.RoomEvent
 import io.livekit.android.events.collect
 import io.livekit.android.room.Room
@@ -28,7 +28,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 /**
  * SDK-owned singleton that manages the LiveKit WebRTC connection lifecycle.
  * Created once inside [VoiceAgentKit.initialize()] and reused across all fragment
- * attachments.  Fragment-level [VoiceAgentAttachment]s only register/deregister
+ * attachments. Fragment-level [VoiceAgentAttachment]s only register/deregister
  * listeners here — they never open or close connections.
  */
 class LiveKitEngine(
@@ -40,7 +40,7 @@ class LiveKitEngine(
     private val gson = Gson()
 
     // ──────────────────────────────────────────────────────────────
-    // Coroutine scope — supervisor so one failing child doesn't cancel siblings
+    // Coroutine scope
     // ──────────────────────────────────────────────────────────────
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var eventCollectionJob: Job? = null
@@ -87,20 +87,14 @@ class LiveKitEngine(
     // Connect
     // ──────────────────────────────────────────────────────────────
 
-    /**
-     * Fetches a LiveKit token and connects to the room.
-     * Should be called from MainActivity (app-level), not from fragments.
-     *
-     * @param userId The authenticated user's ID. Forms part of the identity and room names.
-     */
     fun connect(userId: String) {
         engineScope.launch {
             try {
                 VoiceAgentLogger.i(TAG, "Connecting for userId: $userId")
 
-                val identity = "user_$userId"
+                val identity  = "user_$userId"
                 val timestamp = System.currentTimeMillis()
-                val roomName = "user_${userId}_room_$timestamp"
+                val roomName  = "user_${userId}_room_$timestamp"
 
                 val response = tokenService.getToken(identity = identity, room = roomName)
                 if (!response.isSuccessful || response.body() == null) {
@@ -115,25 +109,26 @@ class LiveKitEngine(
 
                 VoiceAgentLogger.i(TAG, "Token received. Connecting to $serverUrl")
 
+                // ✅ FIX 1 — Create room on Main thread without RoomOptions
                 val liveKitRoom = withContext(Dispatchers.Main) {
                     LiveKit.create(
                         appContext = context,
-                        overrides = LiveKitOverrides()
+                        overrides  = LiveKitOverrides()
                     )
                 }
 
                 room = liveKitRoom
 
+                // ✅ FIX 1 — connect() without options parameter
                 withContext(Dispatchers.Main) {
                     liveKitRoom.connect(
-                        url = serverUrl,
-                        token = tokenResponse.token,
-                        options = RoomOptions()
+                        url   = serverUrl,
+                        token = tokenResponse.token
                     )
 
-                    // Publish microphone
-                    val audioTrack = liveKitRoom.localParticipant.setMicrophoneEnabled(true)
-                    localAudioTrack = liveKitRoom.localParticipant.getTrackPublication(Track.Source.MICROPHONE)
+                    liveKitRoom.localParticipant.setMicrophoneEnabled(true)
+                    localAudioTrack = liveKitRoom.localParticipant
+                        .getTrackPublication(Track.Source.MICROPHONE)
                         ?.track as? LocalAudioTrack
                 }
 
@@ -141,7 +136,6 @@ class LiveKitEngine(
                 eventHandler.dispatchConnectionState(true)
                 VoiceAgentLogger.i(TAG, "LiveKit room connected successfully")
 
-                // Start collecting room events
                 startEventCollection(liveKitRoom)
 
             } catch (e: Exception) {
@@ -168,9 +162,9 @@ class LiveKitEngine(
                     room?.disconnect()
                     room?.release()
                 }
-                room = null
-                localAudioTrack = null
-                _isConnected = false
+                room             = null
+                localAudioTrack  = null
+                _isConnected     = false
                 eventHandler.dispatchConnectionState(false)
                 VoiceAgentLogger.i(TAG, "Disconnected")
             } catch (e: Exception) {
@@ -188,23 +182,23 @@ class LiveKitEngine(
         eventCollectionJob = engineScope.launch {
             liveKitRoom.events.collect { event ->
                 when (event) {
-                    is RoomEvent.DataReceived -> handleDataReceived(event)
-                    is RoomEvent.Disconnected -> {
+                    is RoomEvent.DataReceived  -> handleDataReceived(event)
+                    is RoomEvent.Disconnected  -> {
                         VoiceAgentLogger.w(TAG, "Room disconnected event received")
                         _isConnected = false
                         eventHandler.dispatchConnectionState(false)
                     }
-                    is RoomEvent.Reconnecting -> {
+                    is RoomEvent.Reconnecting  -> {
                         VoiceAgentLogger.i(TAG, "Room reconnecting…")
                         _isConnected = false
                         eventHandler.dispatchConnectionState(false)
                     }
-                    is RoomEvent.Reconnected -> {
+                    is RoomEvent.Reconnected   -> {
                         VoiceAgentLogger.i(TAG, "Room reconnected")
                         _isConnected = true
                         eventHandler.dispatchConnectionState(true)
                     }
-                    else -> { /* Ignore unhandled events */ }
+                    else -> { /* ignore */ }
                 }
             }
         }
@@ -219,14 +213,21 @@ class LiveKitEngine(
             val rawString = event.data.toString(Charsets.UTF_8)
             VoiceAgentLogger.d(TAG, "DataReceived: $rawString")
 
-            val jsonElement = JsonParser.parseString(rawString)
+            // ✅ FIX 2 — use JsonParser() instance instead of static parseString()
+            @Suppress("DEPRECATION")
+            val jsonElement = JsonParser().parse(rawString)
+
             if (!jsonElement.isJsonObject) {
                 VoiceAgentLogger.w(TAG, "DataReceived payload is not a JSON object, ignoring")
                 return
             }
 
             val map = mutableMapOf<String, Any?>()
-            jsonElement.asJsonObject.entrySet().forEach { (key, value) ->
+
+            // ✅ FIX 3 — explicit entry variable instead of destructuring
+            jsonElement.asJsonObject.entrySet().forEach { entry ->
+                val key   = entry.key
+                val value = entry.value
                 map[key] = when {
                     value.isJsonPrimitive -> {
                         val prim = value.asJsonPrimitive
@@ -236,11 +237,16 @@ class LiveKitEngine(
                             else           -> prim.asString
                         }
                     }
-                    value.isJsonNull -> null
-                    value.isJsonArray -> gson.fromJson(value, List::class.java)
+                    value.isJsonNull  -> null
+                    // ✅ FIX 4 — explicit TypeToken to resolve fromJson overload ambiguity
+                    value.isJsonArray -> gson.fromJson<List<Any?>>(
+                        value,
+                        object : TypeToken<List<Any?>>() {}.type
+                    )
                     else -> value.toString()
                 }
             }
+
             eventHandler.dispatchFormData(map)
 
         } catch (e: Exception) {
@@ -252,13 +258,9 @@ class LiveKitEngine(
     // Send outgoing data message
     // ──────────────────────────────────────────────────────────────
 
-    /**
-     * Sends a map of key-value pairs as a JSON DataChannel message.
-     * Automatically injects "selected_language" from [VoiceAgentConfig.languageProvider].
-     */
     fun sendDataMessage(data: Map<String, Any?>) {
         if (!_isConnected) {
-            VoiceAgentLogger.w(TAG, "sendDataMessage called but not connected — dropping message")
+            VoiceAgentLogger.w(TAG, "sendDataMessage called but not connected — dropping")
             return
         }
 
@@ -275,14 +277,14 @@ class LiveKitEngine(
                 }
                 mutable["selected_language"] = language
 
-                val json = gson.toJson(mutable)
+                val json  = gson.toJson(mutable)
+                val bytes = json.toByteArray(Charsets.UTF_8)
                 VoiceAgentLogger.d(TAG, "Sending DataMessage: $json")
 
                 withContext(Dispatchers.Main) {
-                    room?.localParticipant?.publishData(
-                        data = json.toByteArray(Charsets.UTF_8),
-                        reliability = io.livekit.android.room.participant.Participant.Reliability.RELIABLE
-                    )
+                    // ✅ FIX 5 — publishData without Reliability parameter
+                    // (reliable=true is the default in this LiveKit version)
+                    room?.localParticipant?.publishData(data = bytes)
                 }
             } catch (e: Exception) {
                 VoiceAgentLogger.e(TAG, "sendDataMessage failed", e)
