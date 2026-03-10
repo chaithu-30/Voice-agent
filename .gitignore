@@ -1,0 +1,74 @@
+# Android
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cdk
+
+# Gradle
+.gradle/
+build/
+out/
+
+# Build outputs
+**/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# ProGuard
+*.pro.orig
+
+# Log/tmp files
+*.log
+*.tmp
+
+# Keystore files (NEVER commit these)
+*.jks
+*.keystore
+keystore.properties
+
+# Room schema exports (optional — remove if you want to track these)
+**/schemas/
+
+# Google Services
+google-services.json
+GoogleService-Info.plist
+
+# GitHub token files (never commit)
+gpr.key
+
+# IDE files
+.idea/
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+*.swp
+*.swo
+
+# IntelliJ
+*.xml
+!.idea/modules.xml
+!.idea/gradle.xml
+!.idea/runConfigurations/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# npm (sample-app or scripts)
+node_modules/
+npm-debug.log
