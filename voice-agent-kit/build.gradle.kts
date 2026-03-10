@@ -89,10 +89,10 @@ afterEvaluate {
         repositories {
             maven {
                 name = "GitHubPackages"
-                url = uri("https://maven.pkg.github.com/YOUR_GITHUB_USERNAME/voice-agent-kit")
+                url = uri("https://maven.pkg.github.com/chaithu-30/voice-agent-kit")
                 credentials {
-                    username = project.findProperty("gpr.user") as String? ?: System.getenv("GITHUB_USERNAME")
-                    password = project.findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
+                    username = project.findProperty("gpr.user") as String? ?: System.getenv("chaithu-30")
+                    password = project.findProperty("gpr.key") as String? ?: System.getenv("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")
                 }
             }
         }
